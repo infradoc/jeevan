@@ -269,62 +269,49 @@ foreach ($sub in $subs) {
 
                 "microsoft.web/sites" {
                     try {
-                        if (-not $res.properties) {
-                            Write-Output "⚠️ Resource Properties are null for $($res.name)"
-                            Write-Output "Debug: `$res = $($res | ConvertTo-Json -Depth 5)"
-                            return "N/A"
-                        }
+                        if ($res.id -match "/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft.Web/sites/([^/]+)") {
+                            $subId = $matches[1]
+                            $rg = $matches[2]
+                            $appName = $matches[3]
 
-                        $serverFarmId = $res.properties.serverFarmId
-                        Write-Output "🔍 Found serverFarmId: $serverFarmId for resource $($res.name)"
+                            $appUrl = "https://management.azure.com/subscriptions/$subId/resourceGroups/$rg/providers/Microsoft.Web/sites/$($appName)?api-version=2024-04-01"
+                            Write-Host "➡️ Fetching Web App details: $appUrl"
+                            $appDetail = Invoke-RestMethod -Uri $appUrl -Headers $headers -Method Get
 
-                        if (-not $serverFarmId) {
-                            Write-Output "⚠️ serverFarmId is null or empty for resource $($res.name)"
-                            # Attempt to fetch plan details using resource group and name as fallback
-                            if ($res.resourceGroup -and $res.name) {
-                                $planUrl = "https://management.azure.com/subscriptions/$($res.subscriptionId)/resourceGroups/$($res.resourceGroup)/providers/Microsoft.Web/serverfarms?api-version=2024-04-01"
-                                $plans = Invoke-RestMethod -Uri $planUrl -Headers $headers -Method Get -ErrorAction Stop
-                                $associatedPlan = $plans.value | Where-Object { $_.id -like "*$($res.name)*" }
-                                if ($associatedPlan) {
-                                    $serverFarmId = $associatedPlan.id
-                                    Write-Output "🔍 Fallback: Found serverFarmId = $serverFarmId"
+                            $serverFarmId = $appDetail.properties.serverFarmId
+                            Write-Host "🔎 ServerFarmId: $serverFarmId"
+
+                            if ($serverFarmId -match "/subscriptions/[^/]+/resourceGroups/([^/]+)/providers/Microsoft.Web/serverfarms/([^/]+)") {
+                                $planRG = $matches[1]
+                                $planName = $matches[2]
+                                $planUrl = "https://management.azure.com/subscriptions/$subId/resourceGroups/$planRG/providers/Microsoft.Web/serverfarms/$($planName)?api-version=2024-04-01"
+                                Write-Host "➡️ Fetching App Service Plan SKU: $planUrl"
+
+                                $plan = Invoke-RestMethod -Uri $planUrl -Headers $headers -Method Get
+                                if ($plan.sku.tier -and $plan.sku.name) {
+                                    "$($plan.sku.tier)_$($plan.sku.name)"
+                                }
+                                elseif ($plan.sku.name) {
+                                    $plan.sku.name
                                 }
                                 else {
-                                    return "N/A"
+                                    Write-Host "⚠️ No SKU found in App Service Plan response for $($res.name)"
+                                    "N/A"
                                 }
                             }
                             else {
-                                return "N/A"
+                                Write-Host "⚠️ Invalid or missing serverFarmId format: $serverFarmId"
+                                "N/A"
                             }
                         }
-
-                        $parts = $serverFarmId -split '/'
-                        $planSubId = $parts[2]
-                        $planRG = $parts[4]
-                        $planName = $parts[-1]
-
-                        if (-not $planSubId -or -not $planRG -or -not $planName) {
-                            Write-Output "⚠️ Could not parse serverFarmId for $($res.name): $serverFarmId"
-                            return "N/A"
-                        }
-
-                        $planUrl = "https://management.azure.com/subscriptions/$planSubId/resourceGroups/$planRG/providers/Microsoft.Web/serverfarms/$planName?api-version=2024-04-01"
-                        $plan = Invoke-RestMethod -Uri $planUrl -Headers $headers -Method Get -ErrorAction Stop
-
-                        if ($plan.sku.tier -and $plan.sku.name) {
-                            return "$($plan.sku.tier)_$($plan.sku.name)"
-                        }
-                        elseif ($plan.sku.name) {
-                            return $plan.sku.name
-                        }
                         else {
-                            Write-Output "⚠️ No SKU in plan response for $($res.name)"
-                            return "N/A"
+                            Write-Host "⚠️ Could not parse Web App ID: $($res.id)"
+                            "N/A"
                         }
                     }
                     catch {
-                        Write-Output "❌ Error fetching App Service Plan SKU for $($res.name): $_"
-                        return "N/A"
+                        Write-Host "❌ Error fetching Web App or Plan details for $($res.name): $_"
+                        "N/A"
                     }
                 }
 
