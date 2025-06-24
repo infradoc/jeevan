@@ -5,24 +5,42 @@
             $serverName = $matches[2]
             $dbName = $matches[3]
 
-            $dbUrl = "https://management.azure.com/subscriptions/$subId/resourceGroups/$rg/providers/Microsoft.Sql/servers/$serverName/databases/$($dbName)?api-version=2017-10-01-preview"
+            $dbUrl = "https://management.azure.com/subscriptions/$subId/resourceGroups/$rg/providers/Microsoft.Sql/servers/$serverName/databases/$($dbName)?api-version=2023-08-01"
             Write-Output "➡️ Fetching SQL DB SKU: $dbUrl"
 
             $dbDetail = Invoke-RestMethod -Uri $dbUrl -Headers $headers -Method Get
+            Write-Output "🔎 Raw SKU data: $($dbDetail.sku | ConvertTo-Json -Depth 2)"  # Debug the SKU structure
 
             if ($dbDetail.sku) {
+                $skuItems = @()
                 if ($dbDetail.sku -is [array]) {
-                    ($dbDetail.sku | ForEach-Object { "$($_.tier)_$($_.name)" }) -join "; "
-                }
-                elseif ($dbDetail.sku.tier -and $dbDetail.sku.name) {
-                    "$($dbDetail.sku.tier.ToString())_$($dbDetail.sku.name.ToString())"
-                }
-                elseif ($dbDetail.sku.name) {
-                    $dbDetail.sku.name.ToString()
+                    foreach ($sku in $dbDetail.sku) {
+                        if ($sku.tier -and $sku.name) {
+                            $skuItems += "$($sku.tier.ToString())_$($sku.name.ToString())"
+                        }
+                        elseif ($sku.name) {
+                            $skuItems += $sku.name.ToString()
+                        }
+                    }
+                    if ($skuItems.Count -gt 0) {
+                        $skuItems -join "; "
+                    }
+                    else {
+                        Write-Output "⚠️ No valid SKU properties found in array for $dbName"
+                        "N/A"
+                    }
                 }
                 else {
-                    Write-Output "⚠️ SKU is present but missing expected properties for $dbName"
-                    "N/A"
+                    if ($dbDetail.sku.tier -and $dbDetail.sku.name) {
+                        "$($dbDetail.sku.tier.ToString())_$($dbDetail.sku.name.ToString())"
+                    }
+                    elseif ($dbDetail.sku.name) {
+                        $dbDetail.sku.name.ToString()
+                    }
+                    else {
+                        Write-Output "⚠️ SKU is present but missing expected properties for $dbName"
+                        "N/A"
+                    }
                 }
             }
             else {
