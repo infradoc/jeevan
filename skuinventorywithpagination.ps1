@@ -221,7 +221,6 @@ try {
     $secureToken = (Get-AzAccessToken -ResourceUrl 'https://management.azure.com/').Token
     $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
     $token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
-    # Write-Output "Token is:  $($token)"
     $headers = @{ Authorization = "Bearer $token" }
 }
 catch {
@@ -231,7 +230,7 @@ catch {
 
 # Subscriptions
 $inventory = @()
-$subsUri = "https://management.azure.com/subscriptions?api-version=2020-01-01"
+$subsUri = "https://management.azure.com/subscriptions?api-version=2022-12-01"
 $subs = (Invoke-RestMethod -Uri $subsUri -Headers $headers -Method Get).value
 
 foreach ($sub in $subs) {
@@ -329,38 +328,28 @@ $resList = @()
                             $serverName = $matches[2]
                             $dbName = $matches[3]
 
-                            $dbUrl = "https://management.azure.com/subscriptions/$subId/resourceGroups/$rg/providers/Microsoft.Sql/servers/$serverName/databases/$($dbName)?api-version=2023-08-01"
-                            Write-Output "➡️ Fetching SQL DB SKU: $dbUrl"
+                            $dbUrl = "https://management.azure.com/subscriptions/$subId/resourceGroups/$rg/providers/Microsoft.Sql/servers/$serverName/databases/$($dbName)?api-version=2017-10-01-preview"
+                            Write-Host "➡️ Fetching SQL DB SKU: $dbUrl"
 
                             $dbDetail = Invoke-RestMethod -Uri $dbUrl -Headers $headers -Method Get
-
-                            if ($dbDetail.sku) {
-                                if ($dbDetail.sku -is [array]) {
-                    ($dbDetail.sku | ForEach-Object { "$($_.tier)_$($_.name)" }) -join "; "
-                                }
-                                elseif ($dbDetail.sku.tier -and $dbDetail.sku.name) {
-                                    "$($dbDetail.sku.tier.ToString())_$($dbDetail.sku.name.ToString())"
-                                }
-                                elseif ($dbDetail.sku.name) {
-                                    $dbDetail.sku.name.ToString()
-                                }
-                                else {
-                                    Write-Output "⚠️ SKU is present but missing expected properties for $dbName"
-                                    "N/A"
-                                }
+                            if ($dbDetail.sku.tier -and $dbDetail.sku.name) {
+                                "$($dbDetail.sku.tier)_$($dbDetail.sku.name)"
+                            }
+                            elseif ($dbDetail.sku.name) {
+                                $dbDetail.sku.name
                             }
                             else {
-                                Write-Output "⚠️ SKU property is null for SQL DB: $dbName"
+                                Write-Host "⚠️ No SKU found in SQL DB response for $dbName"
                                 "N/A"
                             }
                         }
                         else {
-                            Write-Output "⚠️ Could not parse SQL DB resource ID: $($res.id)"
+                            Write-Host "⚠️ Could not parse SQL DB resource ID: $($res.id)"
                             "N/A"
                         }
                     }
                     catch {
-                        Write-Output "❌ SQL DB SKU fetch failed for $($res.name): $_"
+                        Write-Host "❌ SQL DB SKU fetch failed for $($res.name): $_"
                         "N/A"
                     }
                 }
